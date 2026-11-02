@@ -1,9 +1,10 @@
 # Project State — Update After Every Session
 
 Last updated: 2026-11-02
-Current phase: Phase 2A — Local Embeddings & Semantic Retrieval complete. Phase 1 ingestion and Phase 1.5
-read-only acceptance remain verified; local baseline retrieval is available, while Agentic RAG, citations,
-Titan, Bedrock, and AWS remain unimplemented/untested.
+Current phase: Phase 3A — Offline Grounded RAG orchestration complete. Phase 1 ingestion, Phase 1.5
+inspection, and Phase 2A local retrieval remain verified. The ask flow has bounded evidence and structural
+citation validation using a Mock provider; real LLM quality, Strands, Titan, Bedrock, and AWS remain
+unimplemented/untested.
 
 ## Verified implementation
 
@@ -47,6 +48,22 @@ Titan, Bedrock, and AWS remain unimplemented/untested.
 - Docker Compose API was safely rebuilt/recreated after the first build completed; only the API container was
   replaced. The PostgreSQL container stayed healthy and its named volume was not deleted or recreated.
   OpenAPI/Swagger now lists `/api/v1/papers/semantic-search` and its parameter schema.
+- Applied non-destructive Alembic revision `0004_embedding_revision`. It adds `model_revision`, records all
+  pre-existing vectors as `unknown`, replaces the uniqueness constraint with `(chunk_id, model_id,
+  model_revision)`, and adds a lookup index. It does not delete or rewrite any vector values.
+- Hugging Face local cache `refs/main` and the official model metadata both returned
+  `e8f8c211226b894fcb81acc59f3b34ba3efd5f42` for
+  `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`. The encoder is now pinned to that revision.
+  Because the initial 178 vectors did not persist a revision at creation time, they remain correctly labelled
+  `unknown`; they were not retroactively marked as pinned.
+- Generated and validated a separate pinned revision corpus: 178 vectors, dimensions min/max 384, zero pinned
+  chunks missing vectors. The database contains 356 local vectors total: 178 `unknown` legacy rows and 178
+  pinned rows. Retrieval filters on model ID and revision, so they cannot mix.
+- Implemented Phase 3A modules: semantic retrieval is passed to bounded exact-duplicate-removing evidence
+  selection; the provider interface defaults to an offline, non-generative `mock`; structural citation
+  validation checks request-scoped evidence and authoritative PostgreSQL document/chunk/page fields; and
+  `POST /api/v1/ask` returns explicit `answered`, `insufficient_evidence`, or `provider_error` status.
+  The Mock provider does not produce a scholarly conclusion and is never described as a real LLM.
 
 ## Metadata and parsing limitations
 
@@ -68,7 +85,8 @@ Titan, Bedrock, and AWS remain unimplemented/untested.
 - `backend/pyproject.toml`, `backend/app/main.py`, `backend/app/db.py`, `backend/app/models.py`,
   `backend/app/schemas.py`
 - `backend/app/ingestion/`, `backend/app/embeddings/`, `backend/alembic.ini`, `backend/alembic/`,
-  `backend/tests/`, `evaluation/phase2a_retrieval_candidates.md`
+  `backend/app/rag/`, `backend/alembic/`, `backend/tests/`, `evaluation/phase2a_retrieval_candidates.md`,
+  `evaluation/phase2a_retrieval_review.md`, `docs/phase3a_grounded_rag_design.md`
 - `.gitignore`, `README.md`, project Skill references, `DECISIONS.md`, and this file.
 
 ## Tests and checks
@@ -89,6 +107,21 @@ Titan, Bedrock, and AWS remain unimplemented/untested.
 - Phase 2A unit/integration coverage includes vector dimension and finite-value validation, batch/idempotent
   generation, semantic ranking and document filtering, empty/invalid query validation, missing-model and
   database-error responses, plus the pre-existing inspection/ingestion regression suite.
+- Phase 3A: Alembic reports `0004_embedding_revision (head)`; pytest reports **23 passed** with five upstream
+  PyMuPDF SWIG deprecation warnings; Ruff passes after formatting. New tests cover bounded duplicate evidence,
+  no results, low-score unsupported retrieval, valid and hallucinated citation handling, provider timeout,
+  provider-error status, empty/invalid ask requests, and existing API regression.
+- Final Phase 3A local verification (2026-11-02): with a transient loopback `DATABASE_URL` constructed from
+  existing local-only Compose variables, `pytest tests` reported **23 passed** (five upstream PyMuPDF SWIG
+  warnings), `ruff check .` reported `All checks passed!`, and Alembic reported
+  `0004_embedding_revision (head)`. A repeat embedding CLI run reported `processed=0`, `skipped=178`, and
+  `failed=0`; it neither rewrote nor duplicated pinned vectors. No credential was printed or persisted.
+- Local HTTP acceptance exercised `POST /api/v1/ask` with five corpus-related questions. It returned
+  `answered`, `provider=mock`, and structurally valid citations for each; three intentionally unsupported
+  questions (Mars-colony budget, World Cup 2026, quantum chromodynamics) returned
+  `insufficient_evidence` with no selected citations. The response text is Mock evidence-review placeholder
+  text, not an evaluation of real LLM answer quality. Swagger's OpenAPI page lists the `rag` group and
+  `POST /api/v1/ask` locally.
 - Swagger/OpenAPI verification after the API-only rebuild: `GET /openapi.json` lists
   `/api/v1/papers/semantic-search`; an actual local request for `What is the E-CARGO model?` returned 200 and
   three provenance-bearing results. Swagger UI itself was used with `q=What is the E-CARGO model?` and
@@ -122,6 +155,18 @@ These are retrieval observations, not manually adjudicated evidence support. The
 in `evaluation/phase2a_retrieval_candidates.md` were confirmed to have one or more keyword matches, but a
 human reviewer must label relevant chunks before Recall@K, MRR, or a Keyword-vs-Semantic performance claim.
 
+## Retrieval review and Phase 3A limitations
+
+- Ran ten real corpus-related questions through both Keyword and fixed-revision Semantic retrieval. The full
+  Top-5 provenance/excerpt record and automatic preliminary observations are in
+  `evaluation/phase2a_retrieval_review.md`. Several full natural-language phrases had no exact `ILIKE` hit but
+  semantic results had topical language; this is an observation, not a measured advantage. Bibliography and
+  table-of-contents matches are explicitly flagged as possible keyword noise.
+- No reviewer has supplied relevance or claim-support labels. No Recall@K, MRR, precision, groundedness, or
+  answer-accuracy figure exists.
+- `POST /api/v1/ask` is structurally grounded only. It checks citation provenance, not semantic entailment.
+  The Mock provider's output is evidence-review placeholder text, not an academic answer.
+
 ## Publication readiness
 
 - Expanded `.gitignore` to protect `.env.*` while retaining `.env.example`, `kb/processed/`, local
@@ -146,18 +191,18 @@ human reviewer must label relevant chunks before Recall@K, MRR, or a Keyword-vs-
 
 1. Obtain authorised bibliographic metadata for the two PDFs (or confirm that null metadata is acceptable for
    the fixture corpus) and decide a reliable section/printed-page-label extraction policy.
-2. Human-label the fixed retrieval candidates and evaluate local Keyword versus Semantic top-k results before
-   making any quality claim; retain out-of-scope questions rather than treating them as failures.
-3. Decide whether to request explicit AWS permissions/cost approval for an isolated Titan V2 512-dimensional
-   Phase 2B comparison, or proceed first with Phase 3 Agent design only.
+2. Have a qualified reviewer label `evaluation/phase2a_retrieval_review.md`, including topical relevance,
+   bibliography/table-of-contents noise, and claim-level support before publishing metrics.
+3. Choose a real LLM provider only with explicit cost/data approval; define its region, model ID, timeout,
+   provider logging policy, and evaluation gate before implementing Phase 3B.
 
 ## Session handoff
 
-Phase 2A has a working local ingestion foundation, read-only inspection APIs, 178 local 384-dimensional
-embeddings, and pgvector semantic retrieval. It does not have a Strands Agent, chat/session persistence,
-structured section extraction, verified bibliographic metadata, answer generation, citation validation, human
-retrieval labels, Amazon Titan vectors, Bedrock verification, or academic answer quality/citation readiness.
-Do not claim these unimplemented capabilities.
+Phase 3A has local ingestion, inspection APIs, 178 pinned 384-dimensional embeddings, 178 preserved
+unknown-revision legacy embeddings, pgvector semantic retrieval, and Mock-backed structural grounding. It
+does not have a real LLM, Strands Agent, chat/session persistence, structured section extraction, verified
+bibliographic metadata, semantic citation-support evaluation, human relevance labels, Titan vectors, Bedrock
+verification, or academic answer quality/citation readiness. Do not claim these unimplemented capabilities.
 
 ## Current blockers
 
@@ -171,8 +216,6 @@ Do not claim these unimplemented capabilities.
   user-driven Apple Command Line Tools/Xcode installation or repair; do not delete the existing CLT directory,
   run a system upgrade, or use sudo without explicit user action. Phase 2A commit/push is paused until Git
   works again.
-- The Hugging Face model revision is not pinned; package version and model ID are recorded, but an immutable
-  model revision should be selected before reproducible benchmark claims.
 - Docker Compose does not yet mount a persistent local Hugging Face model cache. Recreating the API container
   may therefore require another model-artifact download and adds startup/query latency; this is a local
   developer-experience limitation, not a corpus-data upload path.

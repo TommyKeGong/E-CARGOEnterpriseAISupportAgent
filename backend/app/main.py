@@ -11,11 +11,18 @@ from app.db import get_db_session
 from app.embeddings.local import (
     COSINE_DISTANCE_METRIC,
     LOCAL_MODEL_ID,
+    LOCAL_MODEL_REVISION,
     get_local_encoder,
     semantic_search,
 )
 from app.models import AcademicDocument, DocumentChunk
+from app.rag.orchestrator import GroundedRAGOrchestrator
+from app.rag.providers import get_default_provider
 from app.schemas import (
+    AnswerCitation,
+    AskRequest,
+    AskResponse,
+    DebugRetrievalResult,
     KeywordSearchResponse,
     KeywordSearchResult,
     PaperChunkPageResponse,
@@ -23,6 +30,8 @@ from app.schemas import (
     PaperDetailResponse,
     PaperListItem,
     PaperListResponse,
+    RetrievalResponse,
+    SelectedEvidence,
     SemanticSearchResponse,
     SemanticSearchResult,
 )
@@ -64,6 +73,67 @@ def _excerpt(chunk_text: str, query: str, maximum_length: int = 400) -> str:
     prefix = "…" if start else ""
     suffix = "…" if end < len(chunk_text) else ""
     return f"{prefix}{chunk_text[start:end]}{suffix}"
+
+
+def run_grounded_rag(
+    db: Session, question: str, top_k: int, debug_retrieval: bool = False
+) -> AskResponse:
+    """Run the offline mock-backed grounded RAG path; no remote provider is contacted."""
+    result = GroundedRAGOrchestrator(provider=get_default_provider()).answer(
+        db, question, get_local_encoder(), top_k=top_k, debug_retrieval=debug_retrieval
+    )
+    return AskResponse(
+        question=result.question,
+        answer=result.answer,
+        status=result.status,
+        provider=result.provider,
+        citations=[
+            AnswerCitation(
+                document_id=citation.document_id,
+                chunk_id=citation.chunk_id,
+                source_filename=citation.source_filename,
+                pdf_page_number=citation.pdf_page_number,
+            )
+            for citation in result.citations
+        ],
+        selected_evidence=[
+            SelectedEvidence(
+                document_id=evidence.document_id,
+                chunk_id=evidence.chunk_id,
+                source_filename=evidence.source_filename,
+                pdf_page_number=evidence.pdf_page_number,
+                chunk_text=evidence.original_chunk_text,
+                similarity_score=evidence.similarity_score,
+            )
+            for evidence in result.selected_evidence
+        ],
+        debug_retrieval=(
+            [
+                DebugRetrievalResult(
+                    document_id=decision.result.document_id,
+                    chunk_id=decision.result.chunk_id,
+                    source_filename=decision.result.source_filename,
+                    pdf_page_number=decision.result.pdf_page_number,
+                    chunk_text=decision.result.chunk_text,
+                    similarity_score=decision.result.similarity_score,
+                    selected=decision.selected,
+                    selection_reason=decision.selection_reason,
+                )
+                for decision in result.debug_retrieval
+            ]
+            if debug_retrieval
+            else None
+        ),
+        retrieval=RetrievalResponse(
+            search_type="semantic",
+            model_id=result.retrieval.model_id,
+            model_revision=result.retrieval.model_revision,
+            distance_metric="cosine",
+            retrieved_count=result.retrieval.retrieved_count,
+            selected_count=result.retrieval.selected_count,
+        ),
+        invalid_citation_count=result.invalid_citation_count,
+    )
 
 
 @app.get("/api/v1/papers", response_model=PaperListResponse, tags=["papers"])
@@ -150,6 +220,7 @@ def search_papers_semantic(
         raise _database_unavailable() from error
     return SemanticSearchResponse(
         model_id=LOCAL_MODEL_ID,
+        model_revision=LOCAL_MODEL_REVISION,
         distance_metric=COSINE_DISTANCE_METRIC,
         query=q,
         results=[
@@ -164,6 +235,17 @@ def search_papers_semantic(
             for result in results
         ],
     )
+
+
+@app.post("/api/v1/ask", response_model=AskResponse, tags=["rag"])
+def ask_question(
+    request: AskRequest, db: Annotated[Session, Depends(get_db_session)]
+) -> AskResponse:
+    """Return selected local evidence; the default Mock provider never claims an answer."""
+    try:
+        return run_grounded_rag(db, request.question, request.top_k, request.debug_retrieval)
+    except (RuntimeError, SQLAlchemyError) as error:
+        raise _database_unavailable() from error
 
 
 @app.get(

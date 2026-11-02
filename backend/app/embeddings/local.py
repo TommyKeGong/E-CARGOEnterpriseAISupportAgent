@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import AcademicDocument, ChunkEmbedding, DocumentChunk
 
 LOCAL_MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+LOCAL_MODEL_REVISION = "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
 LOCAL_EMBEDDING_DIMENSION = 384
 COSINE_DISTANCE_METRIC = "cosine"
 
@@ -57,7 +58,7 @@ def get_local_encoder() -> TextEncoder:
     """Load the approved local model lazily from the sentence-transformers cache/source."""
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(LOCAL_MODEL_ID)
+    model = SentenceTransformer(LOCAL_MODEL_ID, revision=LOCAL_MODEL_REVISION)
     dimension = model.get_embedding_dimension()
     if dimension != LOCAL_EMBEDDING_DIMENSION:
         raise RuntimeError(
@@ -77,6 +78,7 @@ def generate_local_embeddings(
     *,
     batch_size: int = 32,
     model_id: str = LOCAL_MODEL_ID,
+    model_revision: str = LOCAL_MODEL_REVISION,
     document_id: str | None = None,
 ) -> EmbeddingRunResult:
     """Generate missing model-scoped vectors in batches and retain failed chunks for retry."""
@@ -98,6 +100,7 @@ def generate_local_embeddings(
             session.scalars(
                 select(ChunkEmbedding.chunk_id).where(
                     ChunkEmbedding.model_id == model_id,
+                    ChunkEmbedding.model_revision == model_revision,
                     ChunkEmbedding.chunk_id.in_([chunk.chunk_id for chunk in batch]),
                 )
             ).all()
@@ -118,6 +121,7 @@ def generate_local_embeddings(
                         ChunkEmbedding(
                             chunk_id=chunk.chunk_id,
                             model_id=model_id,
+                            model_revision=model_revision,
                             dimension=LOCAL_EMBEDDING_DIMENSION,
                             embedding=vector,
                         )
@@ -137,6 +141,7 @@ def semantic_search(
     top_k: int = 5,
     document_id: str | None = None,
     model_id: str = LOCAL_MODEL_ID,
+    model_revision: str = LOCAL_MODEL_REVISION,
 ) -> list[SemanticResult]:
     """Use pgvector cosine distance for one model family; never calculate similarity in Python."""
     if not query.strip():
@@ -150,6 +155,7 @@ def semantic_search(
         .join(ChunkEmbedding, ChunkEmbedding.chunk_id == DocumentChunk.chunk_id)
         .join(AcademicDocument, AcademicDocument.document_id == DocumentChunk.document_id)
         .where(ChunkEmbedding.model_id == model_id)
+        .where(ChunkEmbedding.model_revision == model_revision)
         .order_by(distance)
         .limit(top_k)
     )

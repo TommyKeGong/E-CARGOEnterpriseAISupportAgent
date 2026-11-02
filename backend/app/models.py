@@ -87,12 +87,18 @@ class ChunkEmbedding(Base):
     embedding_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     chunk_id: Mapped[str] = mapped_column(ForeignKey("paper_chunks.chunk_id"), nullable=False)
     model_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    model_revision: Mapped[str] = mapped_column(String(64), nullable=False)
     dimension: Mapped[int] = mapped_column(Integer, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     chunk: Mapped[DocumentChunk] = relationship(back_populates="embeddings")
     __table_args__ = (
-        UniqueConstraint("chunk_id", "model_id", name="uq_chunk_embeddings_chunk_model"),
+        UniqueConstraint(
+            "chunk_id",
+            "model_id",
+            "model_revision",
+            name="uq_chunk_embeddings_chunk_model_revision",
+        ),
         CheckConstraint("dimension > 0", name="ck_chunk_embeddings_dimension_positive"),
         CheckConstraint(
             "vector_dims(embedding) = dimension",

@@ -34,3 +34,15 @@ Status: Accepted (Phase 2A implementation decision)
 Decision: Use `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` as a local, 384-dimensional semantic-retrieval baseline. Store vectors in a new `chunk_embeddings` table keyed by `(chunk_id, model_id)`, with a persisted dimension, pgvector dimension constraint, and a partial HNSW cosine index for the local model. Keep the existing nullable `paper_chunks.embedding vector(512)` column untouched for a future, separately approved Titan Text Embeddings V2 configuration.
 Reason: A 384-dimensional vector cannot safely be written to, padded into, or compared with the 512-dimensional Titan contract. Model-scoped persistence supports side-by-side evaluation without dimensional mixing.
 Consequences: Query and corpus vectors must use the same `model_id`; semantic scores are cosine-derived ranking signals, not answer probabilities. Existing vectors for the same `(chunk_id, model_id)` are skipped on repeat runs. The Sentence Transformers package was verified at version 6.2.0; the Hugging Face model revision is not yet pinned, so reproducibility requires pinning a revision before production evaluation.
+
+## ADR-008 — 2026-11-02 — Revision-scoped local embeddings
+Status: Accepted (Phase 2A provenance correction)
+Decision: Pin the local model to Hugging Face commit `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`, verified from the local cache ref and Hugging Face model metadata. Add `model_revision` to `chunk_embeddings` and identify an embedding by `(chunk_id, model_id, model_revision)`. Preserve the earlier 178 rows with `model_revision = unknown`; generate a distinct 178-row pinned set rather than relabelling or overwriting legacy data.
+Reason: Earlier rows did not record the resolved commit at generation time, so their exact model provenance cannot be proved retrospectively.
+Consequences: Query retrieval filters by both model ID and revision. Legacy and pinned vectors cannot mix. Titan's future 512-dimensional vectors remain a separate model family.
+
+## ADR-009 — 2026-11-02 — Offline structural grounding before a real LLM
+Status: Accepted (Phase 3A implementation decision)
+Decision: Implement evidence selection, provider abstraction, RAG orchestration, and structural citation validation using an explicitly non-generative local Mock provider. Citation validation accepts a citation only when its document/chunk/page agrees with both the request-scoped evidence and PostgreSQL.
+Reason: This proves local contracts and prevents citation provenance failures without AWS access, paid services, or transmitting research text to a third party.
+Consequences: `POST /api/v1/ask` is not a claim of real LLM quality or semantic grounding. A real provider requires separate user approval, and claim-level evidence support still requires evaluation/human review.

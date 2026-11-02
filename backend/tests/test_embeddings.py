@@ -10,6 +10,7 @@ import app.main as main_module
 from app.db import get_db_session
 from app.embeddings.local import (
     LOCAL_EMBEDDING_DIMENSION,
+    LOCAL_MODEL_REVISION,
     generate_local_embeddings,
     semantic_search,
     validate_embedding,
@@ -123,7 +124,11 @@ def test_batch_generation_is_idempotent(database_session: Session) -> None:
     assert second.skipped == 2
     assert (
         database_session.query(ChunkEmbedding)
-        .filter_by(model_id="test-batch", dimension=LOCAL_EMBEDDING_DIMENSION)
+        .filter_by(
+            model_id="test-batch",
+            model_revision=LOCAL_MODEL_REVISION,
+            dimension=LOCAL_EMBEDDING_DIMENSION,
+        )
         .count()
         == 2
     )

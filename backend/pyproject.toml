@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enterprise-ai-support-agent"
+version = "0.1.0"
+description = "Local-first backend for a grounded enterprise IT support assistant."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "alembic",
+  "fastapi",
+  "pgvector",
+  "psycopg[binary]",
+  "pymupdf",
+  "sqlalchemy",
+  "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx",
+  "pytest",
+  "pytest-asyncio",
+  "ruff",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

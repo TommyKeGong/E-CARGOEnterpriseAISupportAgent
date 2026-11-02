@@ -1,0 +1,1 @@
+"""Local authorised-document ingestion."""

@@ -54,31 +54,23 @@ implemented.
   caches.
 - A filename-only sensitive-pattern scan outside ignored corpus/cache directories found only `.env.example`,
   which contains placeholders. No source PDF was read, staged, or published.
-- Git publishing is blocked locally: every Git invocation fails before repository inspection with
-  `xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)`. Therefore Git status,
-  index/history, remote comparison, commit creation, and push are **not verified or performed**. Direct
-  inspection of `.git/HEAD` indicates `main`, and `.git/config` currently shows no configured remote, but this
-  is not a substitute for Git's integrity checks.
-- The host Git tool was subsequently verified as `git version 2.54.0 (Apple Git-157)`. The local repository
-  has branch `main`, no commits, no staged files, and no configured remote. Non-mutating `git check-ignore`
-  and `git add --dry-run .` checks confirm the candidate public set excludes PDFs, `.env`, database artifacts,
-  caches, and local virtual environments; the only sensitive-pattern filename match is placeholder-only
-  `.env.example`.
-- The requested GitHub URL was queried with `git ls-remote` and returned `Repository not found`. No remote was
-  added, no files were staged, and no commit or push was attempted. The owner must create the repository or
-  grant/authenticate repository access before publication can continue.
-- SSH authentication was then configured through a separate `github-tommy` host alias and verified as
-  `TommyKeGong`. Remote inspection is now authorised, but publication remains paused: remote `main` contains
-  unrelated commits `969bce9 Initial commit` and `1a91ae3 Delete README.md`. Its current tree is empty, yet
-  preserving both histories would require an explicit unrelated-history merge. No remote was configured, no
-  files were staged, no local commit was created, and no push or force operation was attempted.
+- Git is verified as `git version 2.54.0 (Apple Git-157)`. SSH authentication through the local
+  `github-tommy` alias is verified as `TommyKeGong`; `origin` uses that alias for the specified private GitHub
+  repository.
+- Final staged-file checks covered 33 files. `git diff --cached --check` passed; prohibited PDF, `.env`,
+  database, cache, virtual-environment, and private-key artifacts were absent. The only case-insensitive
+  credential-field match was placeholder-only `.env.example`, whose values were redacted for review.
+- The remote's existing, empty-tree history (`969bce9 Initial commit`, `1a91ae3 Delete README.md`) was
+  explicitly preserved by an authorised non-destructive unrelated-history merge. No force push, remote-branch
+  deletion, data deletion, or PDF publication occurred.
+- Published initial project commit `c85a64a feat: initialize E-CARGO Knowledge Agent with PDF ingestion`
+  (33 files) and merge commit `0ab8d4e` to private `origin/main` with an ordinary `git push -u origin main`.
 
 ## Blockers / next three actions
 
-1. Decide whether to preserve the remote's empty but unrelated `main` history by explicitly authorising an
-   unrelated-history merge, or whether the remote history should be handled manually before publication.
-2. Obtain authorised bibliographic metadata for the two PDFs (or confirm that null metadata is acceptable for the fixture corpus) and decide a reliable section/printed-page-label extraction policy.
-3. Complete remaining Phase 1 section extraction and metadata-validation workflow, including explicit authorised metadata input.
+1. Obtain authorised bibliographic metadata for the two PDFs (or confirm that null metadata is acceptable for the fixture corpus) and decide a reliable section/printed-page-label extraction policy.
+2. Complete remaining Phase 1 section extraction and metadata-validation workflow, including explicit authorised metadata input.
+3. After explicit AWS cost approval and credentials, begin Phase 2 with Titan V2 512-d embeddings and pgvector retrieval evaluation.
 
 ## Session handoff
 

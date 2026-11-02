@@ -8,6 +8,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db import get_db_session
+from app.embeddings.local import (
+    COSINE_DISTANCE_METRIC,
+    LOCAL_MODEL_ID,
+    get_local_encoder,
+    semantic_search,
+)
 from app.models import AcademicDocument, DocumentChunk
 from app.schemas import (
     KeywordSearchResponse,
@@ -17,6 +23,8 @@ from app.schemas import (
     PaperDetailResponse,
     PaperListItem,
     PaperListResponse,
+    SemanticSearchResponse,
+    SemanticSearchResult,
 )
 
 app = FastAPI(
@@ -116,6 +124,46 @@ def search_papers_keyword(
         for chunk, source_filename in rows
     ]
     return KeywordSearchResponse(query=q, items=items, total=len(items))
+
+
+@app.get(
+    "/api/v1/papers/semantic-search",
+    response_model=SemanticSearchResponse,
+    tags=["papers"],
+)
+def search_papers_semantic(
+    q: Annotated[str, Query(min_length=1, max_length=500, description="Natural-language query")],
+    db: Annotated[Session, Depends(get_db_session)],
+    top_k: Annotated[int, Query(ge=1, le=20)] = 5,
+    document_id: str | None = None,
+) -> SemanticSearchResponse:
+    """Search local 384-d embeddings with pgvector cosine distance, not answer probability."""
+    try:
+        if document_id is not None and db.get(AcademicDocument, document_id) is None:
+            raise _paper_not_found(document_id)
+        results = semantic_search(db, q, get_local_encoder(), top_k=top_k, document_id=document_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+        ) from error
+    except (RuntimeError, SQLAlchemyError) as error:
+        raise _database_unavailable() from error
+    return SemanticSearchResponse(
+        model_id=LOCAL_MODEL_ID,
+        distance_metric=COSINE_DISTANCE_METRIC,
+        query=q,
+        results=[
+            SemanticSearchResult(
+                document_id=result.document_id,
+                source_filename=result.source_filename,
+                chunk_id=result.chunk_id,
+                pdf_page_number=result.pdf_page_number,
+                similarity_score=result.similarity_score,
+                excerpt=_excerpt(result.chunk_text, q),
+            )
+            for result in results
+        ],
+    )
 
 
 @app.get(

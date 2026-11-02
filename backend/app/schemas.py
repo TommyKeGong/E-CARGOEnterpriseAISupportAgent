@@ -56,3 +56,22 @@ class KeywordSearchResponse(BaseModel):
     query: str
     items: list[KeywordSearchResult]
     total: int
+
+
+class SemanticSearchResult(BaseModel):
+    document_id: str
+    source_filename: str
+    chunk_id: str
+    pdf_page_number: int
+    similarity_score: float
+    excerpt: str
+
+
+class SemanticSearchResponse(BaseModel):
+    """Cosine-distance pgvector results for one local model family, not answer confidence."""
+
+    search_type: str = "semantic"
+    model_id: str
+    distance_metric: str = "cosine"
+    query: str
+    results: list[SemanticSearchResult]

@@ -28,3 +28,9 @@ Consequences: ADR-002, ADR-003, and ADR-004 remain historical records but their 
 Status: Accepted (implementation decision)
 Decision: Import user-provided PDFs by SHA-256 with physical PDF page index/number tracking. Do not infer bibliographic metadata from filenames, PDF body text, or unreliable PDF metadata: title, authors, year, venue, and DOI may remain null; `rights_status` defaults to `unknown`. Chunking is deterministic, page-bounded, and word-count approximate (350 words with 50-word overlap), not exact tokenisation. `printed_page_label` remains null until a reliable extractor is chosen.
 Reason: Preserve source truth and citation integrity while allowing authorised sources whose embedded metadata is incomplete.
+
+## ADR-007 — 2026-11-02 — Model-scoped local embedding baseline
+Status: Accepted (Phase 2A implementation decision)
+Decision: Use `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` as a local, 384-dimensional semantic-retrieval baseline. Store vectors in a new `chunk_embeddings` table keyed by `(chunk_id, model_id)`, with a persisted dimension, pgvector dimension constraint, and a partial HNSW cosine index for the local model. Keep the existing nullable `paper_chunks.embedding vector(512)` column untouched for a future, separately approved Titan Text Embeddings V2 configuration.
+Reason: A 384-dimensional vector cannot safely be written to, padded into, or compared with the 512-dimensional Titan contract. Model-scoped persistence supports side-by-side evaluation without dimensional mixing.
+Consequences: Query and corpus vectors must use the same `model_id`; semantic scores are cosine-derived ranking signals, not answer probabilities. Existing vectors for the same `(chunk_id, model_id)` are skipped on repeat runs. The Sentence Transformers package was verified at version 6.2.0; the Hugging Face model revision is not yet pinned, so reproducibility requires pinning a revision before production evaluation.

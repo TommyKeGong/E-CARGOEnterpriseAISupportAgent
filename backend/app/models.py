@@ -71,9 +71,31 @@ class DocumentChunk(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True)
     document: Mapped[AcademicDocument] = relationship(back_populates="chunks")
     section: Mapped[DocumentSection | None] = relationship(back_populates="chunks")
+    embeddings: Mapped[list["ChunkEmbedding"]] = relationship(back_populates="chunk")
     __table_args__ = (
         UniqueConstraint("document_id", "chunk_index", name="uq_paper_chunks_document_index"),
         CheckConstraint("chunk_index >= 0", name="ck_paper_chunks_index_nonnegative"),
         CheckConstraint("pdf_page_index >= 0", name="ck_paper_chunks_page_index_nonnegative"),
         CheckConstraint("pdf_page_number > 0", name="ck_paper_chunks_page_number_positive"),
+    )
+
+
+class ChunkEmbedding(Base):
+    """Model-scoped vectors; never mix dimensions or model families in retrieval."""
+
+    __tablename__ = "chunk_embeddings"
+    embedding_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    chunk_id: Mapped[str] = mapped_column(ForeignKey("paper_chunks.chunk_id"), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    chunk: Mapped[DocumentChunk] = relationship(back_populates="embeddings")
+    __table_args__ = (
+        UniqueConstraint("chunk_id", "model_id", name="uq_chunk_embeddings_chunk_model"),
+        CheckConstraint("dimension > 0", name="ck_chunk_embeddings_dimension_positive"),
+        CheckConstraint(
+            "vector_dims(embedding) = dimension",
+            name="ck_chunk_embeddings_dimension_matches_vector",
+        ),
     )

@@ -14,6 +14,7 @@ dependencies = [
   "pgvector",
   "psycopg[binary]",
   "pymupdf",
+  "python-multipart",
   "sentence-transformers",
   "sqlalchemy",
   "uvicorn[standard]",

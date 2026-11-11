@@ -1,5 +1,87 @@
 # Architecture Decision Log
 
+## ADR-015 — 2026-11-10 — Local frontend foundation with explicit development CORS
+Status: Accepted (explicit user direction)
+
+Decision: Add a separate React, TypeScript, Vite, and Tailwind browser client for the existing local FastAPI
+contracts. Keep it presentation-only: no fabricated research data, no direct database/model access, and no
+new backend capability. Permit only an explicit comma-separated local `FRONTEND_ORIGINS` CORS allowlist, with
+Vite loopback origins as the default; do not use wildcard origins or browser credentials.
+
+Consequences: The frontend can call the existing RAG, bounded Agent, document-management, and indexed
+page-context APIs in local development. It does not make unauthenticated upload/delete endpoints safe for
+public exposure, and it must preserve the backend's caveat that structural citation validity is not semantic
+entailment and page context is not an original PDF-page reconstruction.
+
+## ADR-014 — 2026-11-06 — Bounded local research-agent orchestration
+Status: Accepted (explicit user direction)
+
+Decision: Add a request-scoped `BoundedResearchAgent` over the fixed Phase 4B `ResearchTools` registry. An
+Ollama model selects one strictly validated JSON action per step or returns a final JSON answer/citation set;
+the backend owns execution, limits, evidence collection, and citation validation. The offline Mock provider
+retrieves evidence but intentionally returns no scholarly synthesis.
+
+Consequences: The agent cannot execute model-generated code, SQL, shell, network, filesystem, or unregistered
+tools. Defaults/hard ceilings are five tool calls, eight steps, fifteen evidence items, 20,000 tool-result
+characters, and 180 seconds. Retrieved text is untrusted data. Citation validation is request-scoped and
+structural only; semantic support still requires evaluation and human review.
+
+## ADR-013 — 2026-11-06 — Deterministic read-only research-tool foundation
+Status: Accepted (explicit user direction)
+
+Decision: Add a small, route-independent `ResearchTools` Python interface backed by the existing SQLAlchemy
+models and pinned local pgvector retrieval. Its operations are bounded paper search, paper listing/detail,
+chunk paging, and physical-page indexed context. Reuse existing document endpoints rather than duplicate them;
+only expose a read-only page-context HTTP adapter. Page context consists solely of persisted mapped chunks and
+always states that it is not a reconstructed original PDF page.
+
+Consequences: No autonomous orchestration, LLM tool calling, schema change, filesystem access, arbitrary SQL,
+shell execution, network capability, corpus re-ingestion, or write operation is introduced. Tool source
+identifiers are citation-compatible provenance, but structural provenance remains insufficient to prove a future
+answer is semantically supported.
+
+## ADR-012 — 2026-11-06 — Local transactional document-management API
+Status: Accepted (explicit user direction)
+
+Decision: Add local/private multipart PDF upload, indexed document inspection, chunk inspection, and document
+deletion routes. Reuse existing SHA-256 ingestion and the pinned local embedding pipeline; stage uploads only in
+an OS temporary file, then remove it. Reject an incomplete embedding run and roll back the entire insertion.
+Reuse the existing schema; manually delete dependent embeddings, chunks, and sections before the paper row in
+one transaction.
+
+Consequences: The API stores corpus text/chunks/vectors but does not retain upload originals. Upload and delete
+routes remain unauthenticated and must never be publicly exposed without ownership, rights, and authorisation
+controls. A duplicate SHA-256 is idempotent and does not regenerate embeddings.
+
+## ADR-011 — 2026-11-05 — Optional local Ollama grounded-generation provider
+Status: Accepted (explicit user direction)
+
+Decision: Retain the offline `mock` provider as the default and add an optional `ollama` provider selected by
+`RAG_PROVIDER`. The selected model name, URL, and timeout come only from environment variables; no model name
+or endpoint is embedded in the business logic. Loopback URLs are allowed by default. A non-loopback endpoint
+must exactly match `OLLAMA_TRUSTED_BASE_URL`, explicitly acknowledging that selected evidence is transmitted to
+that host. The provider requests strict JSON answer/citation output and passes every claimed citation through
+the existing request-scoped/database structural validator. No schema change, cloud client, model download, or
+remote fallback is introduced.
+
+Consequences: A model's empty answer with no citations is an insufficient-evidence abstention. Timeout,
+unavailable service, missing model, and malformed output are provider errors. Structural citation validation
+prevents unselected or mismatched source identifiers but does not establish semantic entailment or eliminate
+hallucination; evaluation and human review remain necessary.
+
+## ADR-010 — 2026-11-05 — Local evidence transparency and Mock status semantics
+Status: Accepted
+
+Decision: `POST /api/v1/ask` returns `evidence_retrieved` and `answer: null` for the non-generative Mock
+provider. It returns full persisted selected chunk text, source/page provenance, and pgvector similarity score
+for local inspection. An explicit `debug_retrieval` flag returns ranked Top-K candidates and factual selection
+reasons. Scores remain ranking signals, not answer confidence or semantic-support proof.
+
+Consequences: Local reviewers can inspect the exact material presented to a future real provider and spot
+threshold/budget exclusions. Full text and debug data must not be logged or exposed in a production deployment
+without authorisation, rights review, and access controls. Exact duplicate removal remains implemented; a
+near-duplicate heuristic is deferred until evaluation can show it will not suppress useful evidence.
+
 ## ADR-001 — 2026-11-02 — Local-first MVP
 Status: Accepted (from user discussion)
 Decision: Develop on own computer with Docker Compose; postpone lab/VPS/AWS hosting. Use Bedrock as remote model service if access is verified.

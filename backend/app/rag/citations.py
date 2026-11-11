@@ -41,11 +41,16 @@ class CitationValidator:
         chunks_by_id = {chunk.chunk_id: chunk for chunk in rows}
         valid: list[ValidCitation] = []
         invalid_count = 0
-        seen: set[str] = set()
+        seen: set[tuple[str, str, int]] = set()
         for candidate in candidates:
-            if candidate.chunk_id in seen:
+            candidate_key = (
+                candidate.document_id,
+                candidate.chunk_id,
+                candidate.pdf_page_number,
+            )
+            if candidate_key in seen:
                 continue
-            seen.add(candidate.chunk_id)
+            seen.add(candidate_key)
             evidence_item = evidence_by_chunk.get(candidate.chunk_id)
             database_chunk = chunks_by_id.get(candidate.chunk_id)
             if (

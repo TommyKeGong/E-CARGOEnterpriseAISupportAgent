@@ -32,7 +32,7 @@ class RetrievalMetadata:
 @dataclass(frozen=True)
 class RAGResult:
     question: str
-    answer: str
+    answer: str | None
     status: RAGStatus
     provider: str
     citations: list[ValidCitation]
@@ -68,24 +68,16 @@ class GroundedRAGOrchestrator:
         top_k: int,
         debug_retrieval: bool = False,
     ) -> RAGResult:
-        retrieval_limit = max(top_k, 5) if debug_retrieval else top_k
-        retrieved = self.retriever(session, question, encoder, top_k=retrieval_limit)
-        candidates = retrieved[:top_k]
-        selection = self.selector.evaluate(candidates)
+        retrieved = self.retriever(session, question, encoder, top_k=top_k)
+        selection = self.selector.evaluate(retrieved)
         evidence = selection.evidence
-        debug_results: list[EvidenceDecision] = []
-        if debug_retrieval:
-            debug_results = list(selection.decisions)
-            debug_results.extend(
-                EvidenceDecision(result, False, "outside_requested_top_k")
-                for result in retrieved[top_k:5]
-            )
+        debug_results = list(selection.decisions) if debug_retrieval else []
         metadata = RetrievalMetadata(
             search_type="semantic",
             model_id=LOCAL_MODEL_ID,
             model_revision=LOCAL_MODEL_REVISION,
             distance_metric=COSINE_DISTANCE_METRIC,
-            retrieved_count=len(candidates),
+            retrieved_count=len(retrieved),
             selected_count=len(evidence),
         )
         if not evidence:
@@ -105,6 +97,17 @@ class GroundedRAGOrchestrator:
                 question=question,
                 answer="The configured provider could not produce an answer.",
                 status="provider_error",
+                provider=self.provider.provider_name,
+                citations=[],
+                retrieval=metadata,
+                selected_evidence=evidence,
+                debug_retrieval=debug_results,
+            )
+        if output.status == "insufficient_evidence":
+            return RAGResult(
+                question=question,
+                answer="Insufficient retrieved evidence supports an answer to this question.",
+                status="insufficient_evidence",
                 provider=self.provider.provider_name,
                 citations=[],
                 retrieval=metadata,

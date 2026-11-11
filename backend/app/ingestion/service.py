@@ -28,7 +28,15 @@ def document_id_for(content_hash: str) -> str:
     return f"DOC-{content_hash[:20]}"
 
 
-def ingest_pdf(session: Session, path: Path, *, rights_status: str = "unknown") -> IngestionResult:
+def ingest_pdf(
+    session: Session,
+    path: Path,
+    *,
+    rights_status: str = "unknown",
+    source_filename: str | None = None,
+) -> IngestionResult:
+    """Persist one parsed PDF; callers may provide a safe display filename for temporary uploads."""
+    display_filename = source_filename or path.name
     extraction = extract_pdf(path)
     existing = session.scalar(
         select(AcademicDocument).where(AcademicDocument.content_hash == extraction.content_hash)
@@ -36,7 +44,7 @@ def ingest_pdf(session: Session, path: Path, *, rights_status: str = "unknown") 
     if existing:
         return IngestionResult(
             existing.document_id,
-            path.name,
+            existing.source_filename,
             existing.page_count,
             len(existing.chunks),
             "duplicate_skipped",
@@ -54,7 +62,7 @@ def ingest_pdf(session: Session, path: Path, *, rights_status: str = "unknown") 
             publication_year=None,
             publication_venue=None,
             doi=None,
-            source_filename=path.name,
+            source_filename=display_filename,
             content_hash=extraction.content_hash,
             rights_status=rights_status,
             page_count=extraction.page_count,
@@ -78,7 +86,7 @@ def ingest_pdf(session: Session, path: Path, *, rights_status: str = "unknown") 
     session.flush()
     return IngestionResult(
         document_id,
-        path.name,
+        display_filename,
         extraction.page_count,
         len(chunks),
         "imported",

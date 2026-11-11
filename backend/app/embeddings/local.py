@@ -140,6 +140,7 @@ def semantic_search(
     *,
     top_k: int = 5,
     document_id: str | None = None,
+    document_ids: Sequence[str] | None = None,
     model_id: str = LOCAL_MODEL_ID,
     model_revision: str = LOCAL_MODEL_REVISION,
 ) -> list[SemanticResult]:
@@ -148,6 +149,8 @@ def semantic_search(
         raise ValueError("query must not be empty")
     if not 1 <= top_k <= 20:
         raise ValueError("top_k must be between 1 and 20")
+    if document_id is not None and document_ids is not None:
+        raise ValueError("provide document_id or document_ids, not both")
     query_vector = _vectors(encoder, [query])[0]
     distance = ChunkEmbedding.embedding.cosine_distance(query_vector).label("cosine_distance")
     statement = (
@@ -161,6 +164,8 @@ def semantic_search(
     )
     if document_id is not None:
         statement = statement.where(DocumentChunk.document_id == document_id)
+    if document_ids is not None:
+        statement = statement.where(DocumentChunk.document_id.in_(list(document_ids)))
     rows = session.execute(statement).all()
     return [
         SemanticResult(

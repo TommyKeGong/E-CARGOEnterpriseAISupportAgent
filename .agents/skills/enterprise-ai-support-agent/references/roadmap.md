@@ -15,21 +15,54 @@
 
 ## Phase 2 — Embeddings & Semantic Retrieval
 
-- Add approved Titan V2 512-dimensional embedding ingestion.
-- Implement pgvector cosine top-k retrieval and request-scoped evidence metadata.
-- Create authorised, fixed retrieval evaluation cases.
+- **Phase 2A — Local baseline: complete.** A local Sentence Transformers 384-dimensional model stores
+  model-scoped vectors in `chunk_embeddings`; pgvector cosine top-k retrieval, idempotent generation,
+  API inspection, migration, and tests are verified. This is retrieval only, not RAG answering.
+- **Phase 2B — Titan comparison: planned and approval-gated.** Add approved Titan V2 512-dimensional
+  embedding ingestion only after explicit AWS permission/cost approval. It must remain a distinct model
+  family and evaluation configuration.
+- Create authorised, fixed retrieval evaluation cases and human relevance labels before publishing quality
+  metrics. Do not invent Recall@K, MRR, groundedness, or citation-validity results.
 
-**Gate:** dimensions and retrieval metadata are verified; results include numerator/denominator.
+**Gate:** dimensions and retrieval provenance are verified; publish retrieval quality only with an
+annotated denominator and numerator.
 
 ## Phase 3 — E-CARGO Knowledge Agent
 
-- Integrate one request-scoped Strands agent and approved Bedrock model.
-- Implement/test `search_papers` and `get_paper_section` only.
-- Implement chat sessions/messages and API contracts.
+- **Phase 3A — Grounded orchestration: complete locally.** Implement/test a retrieval-to-evidence-to-provider
+  path, bounded evidence selection, structural citation validation, and `POST /api/v1/ask` with an explicitly
+  labelled non-generative Mock provider. It runs without AWS credentials or a remote LLM.
+- **Phase 3A.1 — Retrieval Transparency: complete locally.** Return selected persisted evidence text, physical
+  page and retrieval score; optionally expose ranked Top-K audit results with selection reasons in local debug
+  mode. Mock returns `evidence_retrieved` with no answer. This is inspection support, not real LLM quality or
+  semantic-evidence validation.
+- **Phase 3B — Ollama grounded generation: implemented and live-tested.** The optional Ollama provider,
+  bounded context construction, strict JSON output parser, structural citation validation, configuration, and
+  offline fake-provider tests are implemented. Loopback is default; an explicitly trusted private-network
+  endpoint may receive selected evidence. A real invocation against a user-provided Ollama host and installed
+  model returned a structurally valid cited answer. This is not semantic-grounding evaluation. Bedrock/Strands
+  remain separately planned and approval-gated. Register only `search_papers` and `get_paper_section`; do not
+  register future tools.
+- Implement chat sessions/messages and persist retrieval/audit metadata.
 
-**Gate:** approved live invocation produces a validated cited answer; unsupported questions abstain. Record model, region, configuration, and cost evidence.
+**Gate:** an approved live invocation produces a structurally validated cited answer; unsupported questions
+abstain. Record model, region, configuration, latency, and cost evidence. Structural citation validity alone
+does not establish semantic grounding.
 
 ## Phase 4 — Citation Validation & RAG Evaluation
+
+- **Phase 4A — Local document management: implemented and test-verified.** Bounded multipart PDF upload,
+  existing transactional ingestion and pinned local embeddings, paginated document/chunk inspection, and
+  transactional deletion are available for local/private use. No source-original persistence, authentication,
+  or public exposure is included.
+- **Phase 4B — Research tools foundation: implemented and test-verified.** A deterministic, read-only Python
+  `ResearchTools` interface now exposes bounded document listing/detail/chunk reading, filtered pgvector paper
+  search, and explicitly incomplete indexed page context. Only missing page-context aggregation gained an HTTP
+  adapter; no autonomous tool calling, LLM orchestration, embedding change, or schema migration was introduced.
+- **Phase 4C — Bounded research-agent orchestration: implemented and test-verified.** A fixed, validated tool
+  registry supports request-scoped Ollama JSON actions and final answers under backend-enforced call, step,
+  evidence, character, and time ceilings. It does not execute arbitrary model output; mock mode returns evidence
+  without a scholarly answer. No migration, re-ingestion, model download, or live Ollama invocation was made.
 
 - Enforce citation existence/provenance server-side.
 - Evaluate groundedness, citation validity, abstention, retrieval quality, prompt-injection resistance, and errors.

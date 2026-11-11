@@ -20,11 +20,23 @@ POST /api/v1/ask
   -> evidence selection (limit, exact duplicate removal, provenance retention)
   -> provider interface (Mock now; approved real provider later)
   -> structural citation validation (request evidence + PostgreSQL)
-  -> answered | insufficient_evidence | provider_error
+  -> evidence_retrieved (Mock) | answered (future real provider) | insufficient_evidence | provider_error
 ```
 
-Retrieval score ranks chunks. It is never returned or interpreted as answer confidence. Evidence selection's
+Retrieval score ranks chunks. In Phase 3A.1 it is returned with local evidence inspection, but is never
+interpreted as answer confidence. Evidence selection's
 minimum retrieval eligibility is an abstention control, not a factual-confidence estimate.
+
+## Local evidence transparency
+
+The offline Mock provider produces no answer: it returns `evidence_retrieved` with `answer: null` after
+structural citation validation. The local API returns selected evidence using authoritative persisted chunk
+text, source filename, physical PDF page, and pgvector score. `debug_retrieval=true` adds all requested Top-K
+candidates in rank order with a factual selection reason. This enables review of threshold, exact-duplicate,
+character-budget, and maximum-evidence exclusions without representing the result as LLM answer quality.
+
+Full source text and debug data are local-development inspection features only. They are not written to logs
+and require future rights-aware access control before public deployment.
 
 ## Citation validation
 

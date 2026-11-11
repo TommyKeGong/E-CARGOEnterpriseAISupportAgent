@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply min-h-screen bg-paper text-ink antialiased;
+    background-image: radial-gradient(circle at 10% 0%, rgba(13, 118, 101, 0.12), transparent 28rem);
+  }
+  button, input, textarea, select { font: inherit; }
+}
+
+@layer components {
+  .panel { @apply rounded-2xl border border-ink/10 bg-white/85 shadow-sm backdrop-blur; }
+  .control { @apply rounded-lg border border-ink/20 bg-white px-3 py-2 outline-none transition focus:border-signal focus:ring-2 focus:ring-signal/20; }
+  .button { @apply rounded-lg px-4 py-2 font-medium transition focus:outline-none focus:ring-2 focus:ring-signal/40 disabled:cursor-not-allowed disabled:opacity-50; }
+  .button-primary { @apply button bg-signal text-white hover:bg-signal/90; }
+  .button-quiet { @apply button border border-ink/15 bg-white hover:bg-ink/5; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.16em] text-signal; }
+}

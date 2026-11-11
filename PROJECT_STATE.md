@@ -1,14 +1,106 @@
 # Project State — Update After Every Session
 
-Last updated: 2026-11-02
-Current phase: Phase 3A — Offline Grounded RAG orchestration complete. Phase 1 ingestion, Phase 1.5
-inspection, and Phase 2A local retrieval remain verified. The ask flow has bounded evidence and structural
-citation validation using a Mock provider; real LLM quality, Strands, Titan, Bedrock, and AWS remain
-unimplemented/untested.
+Last updated: 2026-11-10
+Current phase: Phase 5A — Local React frontend foundation implemented and static-verified. Phase 4C.1 real
+Ollama Agent verification remains incomplete and infrastructure-dependent; Phase 5B/public deployment remains
+approval-gated.
+Phase 1 ingestion, Phase 1.5 inspection, and Phase 2A local retrieval remain verified. The ask flow has
+bounded evidence and structural citation validation using a Mock provider; real LLM quality, Strands, Titan,
+Bedrock, and AWS remain unimplemented/untested.
+
+## Current-session status (2026-11-10)
+
+- Phase 4C.1 is **not passed**. Before this lightweight/static session, the approved private Ollama endpoint
+  listed `qwen3:4b`, and one English Agent request returned a syntactically valid JSON `final` action before
+  retrieval (`insufficient_evidence`, zero calls). The provider prompt was minimally changed to require an
+  initial `search_papers` action. Subsequent real requests could not reach the local Docker PostgreSQL service
+  after the machine restart, so English, Chinese, multiple-tool, and unsupported-question end-to-end Agent cases
+  were not completed. The Qwen JSON action protocol is therefore unverified; do not claim the Agent is ready for
+  live frontend use. No model was downloaded, corpus was re-ingested, migration applied, or database data changed.
+- Phase 5A adds `frontend/`, a React + TypeScript + Vite + Tailwind local interface. Chat calls the actual
+  `/api/v1/ask` and `/api/v1/agent/ask` contracts; Library calls existing document list/upload/detail/chunk/delete
+  contracts; Sources calls the existing indexed page-context contract. It renders only response data and calls no
+  non-existent PDF-download, arbitrary search, session, or tool-execution endpoint.
+- Added a narrow development CORS configuration to FastAPI. `FRONTEND_ORIGINS` defaults to Vite loopback origins,
+  avoids wildcard origins and browser credentials, and is not a public-deployment authorisation mechanism.
+- This session deliberately did not start Docker Desktop/PostgreSQL/Ollama, perform live HTTP/LLM checks, run
+  Alembic against a database, download an AI model, re-ingest papers, change schema, commit, or push.
+- Static/offline checks run: `cd frontend && npm run build` (TypeScript + Vite production build passed),
+  `cd frontend && npm run lint` (passed), `cd backend && .venv/bin/python -m pytest -q tests/test_health.py`
+  (later 3 passed after the CORS-deny test was added; five upstream PyMuPDF SWIG deprecation warnings),
+  `cd backend && .venv/bin/ruff check .` (passed), a static OpenAPI assertion for the six frontend-used route
+  paths (passed), and `git diff --check` (passed). Full pytest, Alembic revision, database-backed route checks,
+  browser E2E, CORS against a live process, and real Ollama Agent verification are unverified in this session.
+
+### Frontend startup
+
+1. Start the already-configured private backend separately when infrastructure verification is approved.
+2. In `frontend/`, copy `.env.example` to ignored `.env.local`; set `VITE_API_BASE_URL` only if the backend
+   uses a different private local origin.
+3. Run `npm install` then `npm run dev`. The default Vite frontend origin is explicitly permitted by
+   `FRONTEND_ORIGINS`; do not expose the unauthenticated backend publicly.
+
+### Local service recovery (2026-11-10)
+
+- After a machine restart, `curl http://127.0.0.1:8000/health` initially failed because Docker Compose had no
+  running containers. Docker Desktop itself was healthy. `docker compose up -d --no-build` started the existing
+  PostgreSQL and API containers without building, pulling, pruning, deleting, or changing any volume/model/data.
+  PostgreSQL reported healthy and the follow-up health request returned HTTP 200 with `{"status":"healthy"}`.
+- The running API image was created five days earlier. It restores the current local health endpoint, but it does
+  not include workspace-only backend changes made after that image. Rebuilding it is intentionally deferred:
+  the existing Dockerfile may acquire heavyweight ML dependencies/model artifacts and needs explicit resource
+  review before doing so.
+
+### Frontend fetch recovery (2026-11-10)
+
+- The browser's `Failed to fetch` was reproduced as a CORS preflight failure: the old image returned HTTP 405 to
+  `OPTIONS /api/v1/ask` and its OpenAPI specification lacked `/api/v1/agent/ask`. This was an image/source
+  mismatch, not a retrieval, database, or Ollama failure.
+- The old API container was stopped without deleting it or touching the healthy database container/volume. The
+  current workspace source now runs locally on `127.0.0.1:8000` in `RAG_PROVIDER=mock` and `HF_HUB_OFFLINE=1`
+  mode, with the existing private PostgreSQL service. Its CORS preflight from `http://localhost:5173` returns
+  HTTP 200 and the explicit allow-origin header; OpenAPI contains both `/api/v1/ask` and `/api/v1/agent/ask`.
+- Actual same-origin-style POST checks from `http://localhost:5173` passed: `/api/v1/ask` returned HTTP 200,
+  `evidence_retrieved`, provider `mock`, three evidence items and three citations; `/api/v1/agent/ask` returned
+  HTTP 200, `evidence_retrieved`, provider `mock`, one tool call, and five evidence items. No remote Ollama
+  request, model download, corpus mutation, migration, commit, or push occurred.
+
+### Approved Ollama web-mode enablement (2026-11-10)
+
+- Following explicit user approval, the current source API on `127.0.0.1:8000` was restarted with the already
+  approved private Ollama endpoint, `qwen3:4b`, 120-second timeout, and exact-match trusted endpoint setting.
+  These values exist only in the running process environment and were not written to `.env` or source control.
+  A read-only `/api/tags` check confirmed the already-installed model; no model was downloaded.
+- Real browser-equivalent RAG request `What is E-CARGO?` returned HTTP 200 with `status=answered`, provider
+  `ollama`, two selected evidence items, one validated citation to `Computational Thinking.pdf` physical page 4,
+  and `invalid_citation_count=0`. The returned sentence was inspected only for the structural contract; citation
+  validity remains provenance validation, not proof of semantic entailment.
+- Real browser-equivalent Agent request for the same question returned HTTP 200 with `status=answered`, provider
+  `ollama`, one `search_papers` tool call, one evidence item, one matching page-4 citation,
+  `invalid_citation_count=0`, and 44,574 ms reported execution time. It used strict JSON action flow (tool then
+  final) for this case. Chinese, multi-tool, unsupported-question, timeout, and malformed-output live cases are
+  still unverified, so Phase 4C.1 remains incomplete.
 
 ## Verified implementation
 
 - Phase 0 remains verified: Python 3.12.16, Docker Compose, FastAPI `/health`, PostgreSQL 16.15, pgvector 0.8.7, pytest, and Ruff.
+- Phase 4C bounded research agent (2026-11-06): added `app.rag.agent.BoundedResearchAgent` and
+  `POST /api/v1/agent/ask`. It permits only the five existing Phase 4B read-only tools and validates each
+  structured JSON action plus its Pydantic arguments before execution. Backend limits cap calls (5), steps (8),
+  evidence items (15), cumulative tool-result characters (20,000), and time (180 seconds); environment values
+  may tighten but not raise those ceilings. Request-scoped evidence feeds the existing structural citation
+  validator. The Mock provider retrieves evidence but deliberately returns no scholarly answer. No tool can
+  execute arbitrary code, shell, SQL, filesystem, network, or write operations; document text is untrusted data.
+- Phase 4B research-tools foundation (2026-11-06): added route-independent `ResearchTools` operations for
+  bounded `search_papers`, one-based paginated `list_papers`/`read_chunks`, `get_document`, and
+  `get_page_context`. It delegates semantic search to the same pinned local pgvector retrieval and validates all
+  supplied document filters against persisted documents. Results preserve document/chunk/source filename/physical
+  page provenance; no tool accepts filesystem paths, arbitrary SQL, shell input, writes, or network actions.
+  `get_page_context` joins only persisted chunks mapped to a physical page and always says it is not the original
+  complete PDF page. The only new read-only HTTP adapter is
+  `GET /api/v1/documents/{document_id}/pages/{pdf_page_number}/context`; valid text-empty pages return an empty,
+  explicitly incomplete context. No migration, embedding-model change, corpus re-ingestion, Ollama request, or
+  document deletion occurred.
 - Added SQLAlchemy 2.1.6, Psycopg 3.3.6, Alembic 1.20.1, pgvector 0.5.1, and PyMuPDF 2.1 to `backend/.venv`.
 - Alembic revisions `0001_academic_corpus` and `0002_authors_jsonb` are applied. They create non-destructive `papers`, `paper_sections`, and `paper_chunks` tables plus pgvector extension/indexes and align `authors` with the JSONB contract; downgrade is disabled intentionally.
 - Implemented `AcademicDocument`, `DocumentSection`, `DocumentChunk`; the original nullable
@@ -61,9 +153,19 @@ unimplemented/untested.
   pinned rows. Retrieval filters on model ID and revision, so they cannot mix.
 - Implemented Phase 3A modules: semantic retrieval is passed to bounded exact-duplicate-removing evidence
   selection; the provider interface defaults to an offline, non-generative `mock`; structural citation
-  validation checks request-scoped evidence and authoritative PostgreSQL document/chunk/page fields; and
-  `POST /api/v1/ask` returns explicit `answered`, `insufficient_evidence`, or `provider_error` status.
-  The Mock provider does not produce a scholarly conclusion and is never described as a real LLM.
+  validation checks request-scoped evidence and authoritative PostgreSQL document/chunk/page fields. Phase
+  3A.1 supersedes the earlier Mock status semantics; it does not produce a scholarly conclusion or an answer.
+- Phase 3A.1 corrects the Mock semantics: it now returns `status="evidence_retrieved"` and `answer=null`.
+  `answered` remains reserved for a future real provider that generated an answer. The response exposes
+  selected local `evidence` with its authoritative document/chunk/source/page provenance, full persisted
+  chunk text, actual pgvector similarity score, and `selected=true`.
+- Optional `debug_retrieval=true` returns every requested Top-K candidate in rank order, including its full
+  persisted text, score, selected flag, and the actual selector reason. Debug is off by default and must stay
+  local-development-only; it is not logged. Current selector reasons are `selected`,
+  `below_minimum_similarity`, `duplicate_chunk_text`, `evidence_character_budget_exhausted`, and
+  `max_evidence_reached`.
+- Confirmed database state before Phase 3A.1 acceptance: 2 documents and 178 chunks. Existing embeddings and
+  database data were not regenerated, overwritten, or deleted.
 
 ## Metadata and parsing limitations
 
@@ -85,11 +187,111 @@ unimplemented/untested.
 - `backend/pyproject.toml`, `backend/app/main.py`, `backend/app/db.py`, `backend/app/models.py`,
   `backend/app/schemas.py`
 - `backend/app/ingestion/`, `backend/app/embeddings/`, `backend/alembic.ini`, `backend/alembic/`,
-  `backend/app/rag/`, `backend/alembic/`, `backend/tests/`, `evaluation/phase2a_retrieval_candidates.md`,
+  `backend/app/rag/`, `backend/app/research_tools.py`, `backend/alembic/`, `backend/tests/`,
+  `evaluation/phase2a_retrieval_candidates.md`,
   `evaluation/phase2a_retrieval_review.md`, `docs/phase3a_grounded_rag_design.md`
 - `.gitignore`, `README.md`, project Skill references, `DECISIONS.md`, and this file.
 
 ## Tests and checks
+
+- Phase 4C bounded agent (2026-11-06): added `backend/tests/test_agent.py` using scripted/fake providers and
+  local transactional fixtures. It covers valid tool/citation flow, multiple-call limits, unknown tool,
+  invalid arguments, empty evidence, invalid citations, provider unavailable, execution timeout, Chinese question
+  preservation, untrusted prompt-text handling, and the Mock-backed HTTP route. Focused checks:
+  `pytest -q tests/test_agent.py` **10 passed**; targeted Ruff passed. Final full checks:
+  `pytest -q tests` **54 passed** with five upstream PyMuPDF SWIG
+  deprecation warnings; `ruff check .` passed; Alembic reports `0004_embedding_revision (head)`. The database
+  test URL was transiently built from the running private Compose database environment and was never printed or
+  persisted. No live Ollama Phase 4C invocation was made.
+
+- Phase 4B research tools (2026-11-06): added `backend/tests/test_research_tools.py` with fake local embeddings
+  and database savepoint rollback coverage for source/chunk/page metadata integrity, document-filtered search,
+  pagination, invalid document IDs, a valid-but-text-empty page, page bounds, and the read-only page-context HTTP
+  adapter. It also confirms an indexed document with no persisted vectors returns an empty semantic-search result.
+  Focused checks passed: `pytest -q tests/test_research_tools.py` **4 passed** with five upstream PyMuPDF SWIG
+  deprecation warnings; targeted `ruff check` passed. Final full checks: `pytest -q tests` **44 passed** with
+  five upstream PyMuPDF SWIG deprecation warnings; `ruff check .` passed; Alembic reports
+  `0004_embedding_revision (head)`. The database test URL was transiently built from the running private Compose
+  database environment and was never printed or persisted.
+
+- Phase 4A document management (2026-11-06): implemented bounded multipart PDF upload, SHA-256 duplicate
+  detection, existing transactional PyMuPDF ingestion, pinned local embedding generation, paginated document
+  and chunk inspection, page-number filtering, detail/index status, and transactional document deletion. The
+  upload route validates a plain `.pdf` name, `application/pdf` type, configurable
+  `DOCUMENT_UPLOAD_MAX_BYTES` (25 MiB default), PDF signature, and parser result. It stages only an
+  OS-managed temporary file and always removes it. A failed embedding run rolls the document/chunks/vectors
+  back; no schema migration was needed.
+- Added `backend/tests/test_documents_api.py`. It uses per-request savepoints inside an outer test transaction,
+  so valid-upload, duplicate, listing/detail, chunk filtering, deletion, invalid/empty/malformed/oversized
+  uploads, missing deletion, and embedding-failure rollback do not modify the two existing corpus documents.
+  Final checks: `pytest -q tests` **40 passed** with five upstream PyMuPDF SWIG deprecation warnings;
+  `ruff check .` passed; Alembic reports `0004_embedding_revision (head)`.
+
+- Phase 3B remote Ollama integration (2026-11-06): user authorised a private-network Ollama endpoint with an
+  installed `qwen3:4b` model. A no-corpus `GET /api/tags` probe confirmed it was reachable and listed both
+  `qwen3:4b` (2,497,293,931 bytes) and `qwen3:8b`; no model was downloaded. A temporary local Uvicorn API
+  used `RAG_PROVIDER=ollama`, the configured model, a 120-second timeout, and the exact-match trusted endpoint
+  acknowledgement. A real `POST /api/v1/ask` question, `What is the E-CARGO model?`, returned HTTP 200 with
+  `status=answered`, provider `ollama`, three selected local evidence chunks, one citation, and
+  `invalid_citation_count=0`. The citation matched selected evidence exactly: `Computational Thinking.pdf`,
+  page 4, and its document/chunk identifiers. The observed end-to-end response time was approximately 52
+  seconds, including first local embedding-model load. The generated answer was inspected but is not a
+  semantic-grounding or answer-quality evaluation. The temporary API was stopped after the check.
+- Phase 3B configuration hardening (2026-11-06): non-loopback Ollama URLs are no longer broadly allowed.
+  They must exactly equal `OLLAMA_TRUSTED_BASE_URL`; loopback remains the default. This keeps model endpoint
+  and consent out of application logic while requiring explicit acknowledgement before selected evidence is
+  transmitted to another host. No database migration, corpus/embedding operation, AWS call, or Git write was
+  performed.
+- Added fake-requester coverage for Chinese question preservation and exact non-loopback endpoint trust, in
+  addition to normal generation, unavailable service, timeout, missing model, malformed output, empty
+  retrieval/abstention, unsupported citations, and Mock regression. Final checks: `pytest -q tests` **35
+  passed** with five upstream PyMuPDF SWIG deprecation warnings; `ruff check .` passed; Alembic reports
+  `0004_embedding_revision (head)`.
+
+- Phase 3A.1 final acceptance (2026-11-05): with the database service healthy, a temporary local Uvicorn
+  process was run in Hugging Face offline mode on `127.0.0.1:8010`; it could not download a model. Two real
+  HTTP `POST /api/v1/ask` requests for `What is the E-CARGO model?` returned HTTP 200 from the `mock`
+  provider with `status=evidence_retrieved` and `answer=null`. The debug request returned three selected
+  persisted evidence chunks and five ranked candidates. The unselected page-8 and page-5 candidates had the
+  factual `evidence_character_budget_exhausted` reason. The non-debug request returned `debug_retrieval=null`
+  and no unselected evidence. All three response citations matched the selected evidence and direct
+  PostgreSQL lookup exactly: document/chunk/source/page pairs were `Computational Thinking.pdf` page 4,
+  `Thsis.pdf` page 9, and `Thsis.pdf` page 27. The temporary API was stopped after validation.
+- Phase 3B local preparation (2026-11-05): added a local loopback-only `OllamaProvider` in
+  `backend/app/rag/providers.py`, selected only by `RAG_PROVIDER=ollama`; `mock` remains the default.
+  `OLLAMA_MODEL` is required and no model name is embedded in business logic. Bounded selected evidence is
+  formatted as untrusted data, the provider requests JSON answer/citation output, and its output still passes
+  the request-scoped/PostgreSQL structural citation validator. Empty answer plus no citations is a controlled
+  insufficient-evidence abstention; unavailable service, timeout, missing model, empty answer with citations,
+  and malformed output are controlled provider errors. No schema, embedding, corpus, or cloud-service change
+  was made.
+- Added fake-requester unit coverage for normal structured generation, no-evidence rejection, timeout,
+  unavailable service, missing model, empty abstention, empty answer with citations, malformed output,
+  invalid citation shape, provider selection, document/page citation mismatch, and Mock regression. With the
+  transient local test `DATABASE_URL`, `backend/.venv/bin/pytest -q tests` passed: **33 passed, 5 upstream
+  PyMuPDF SWIG deprecation warnings**; `backend/.venv/bin/ruff check .` passed; Alembic reported
+  `0004_embedding_revision (head)`. These tests did not require or contact Ollama.
+- Resource assessment (read-only, 2026-11-05): host is Apple Silicon (`arm64`) with 16 GiB RAM and about
+  15 GiB available on the system volume. The project directory uses 1.4 GiB, Hugging Face cache uses 458 MiB,
+  Ollama is not installed and its cache is absent. Docker reports 20.24 GB images, 20.76 GB build cache, and
+  67.15 MB volumes; nothing was cleaned. Disk headroom is limited for a local LLM download.
+- Current Phase 3B next steps: (1) obtain user approval before installing Ollama or downloading any model;
+  (2) if approved, start with the user-selected small local model and configure `RAG_PROVIDER=ollama` plus
+  `OLLAMA_MODEL`; (3) run a separately recorded live local integration test for valid citation generation,
+  abstention, timeout/unavailable service, and invalid-citation rejection. Do not treat a successful live
+  invocation or structural citation validation as proof of semantic grounding.
+
+- Crash-recovery verification (2026-11-05): the local `db` Compose service had stopped and port 5432
+  refused connections after the workstation crash. It was restored with `docker compose up -d db` only;
+  the existing two-day-old database container and its named volume were reused, not recreated or deleted.
+  `docker compose ps db` then reported `healthy`. With a transient loopback `DATABASE_URL` constructed
+  from the existing local Compose variables (and never printed or persisted), `backend/.venv/bin/pytest -q
+  tests` passed: **26 passed, 5 upstream PyMuPDF SWIG deprecation warnings**. `backend/.venv/bin/alembic
+  -c alembic.ini current` reported `0004_embedding_revision (head)`, and `backend/.venv/bin/ruff check .`
+  reported `All checks passed!`. No migration, corpus, embedding, or source-file change was made.
+- An initial post-crash test run without `DATABASE_URL` produced four database API failures and twelve
+  skipped database tests; this was corrected by the transient local test configuration above and was not a
+  code regression.
 
 - Alembic `upgrade head` and `current`: passed; current revision `0002_authors_jsonb`; PostgreSQL confirms `papers.authors` is `jsonb`.
 - `pytest`: 13 passed. PyMuPDF emits 5 upstream SWIG deprecation warnings; no test failures.
@@ -111,17 +313,18 @@ unimplemented/untested.
   PyMuPDF SWIG deprecation warnings; Ruff passes after formatting. New tests cover bounded duplicate evidence,
   no results, low-score unsupported retrieval, valid and hallucinated citation handling, provider timeout,
   provider-error status, empty/invalid ask requests, and existing API regression.
+- Phase 3A.1: `pytest tests` reports **26 passed** with five upstream PyMuPDF SWIG deprecation warnings;
+  `ruff check .` passes; Alembic reports `0004_embedding_revision (head)`. Added coverage verifies Mock
+  `evidence_retrieved`/null-answer semantics, source-text and page preservation, citation/evidence alignment,
+  selector audit reasons, debug enable/disable behavior, rank serialization, and existing API validation.
 - Final Phase 3A local verification (2026-11-02): with a transient loopback `DATABASE_URL` constructed from
   existing local-only Compose variables, `pytest tests` reported **23 passed** (five upstream PyMuPDF SWIG
   warnings), `ruff check .` reported `All checks passed!`, and Alembic reported
   `0004_embedding_revision (head)`. A repeat embedding CLI run reported `processed=0`, `skipped=178`, and
   `failed=0`; it neither rewrote nor duplicated pinned vectors. No credential was printed or persisted.
-- Local HTTP acceptance exercised `POST /api/v1/ask` with five corpus-related questions. It returned
-  `answered`, `provider=mock`, and structurally valid citations for each; three intentionally unsupported
-  questions (Mars-colony budget, World Cup 2026, quantum chromodynamics) returned
-  `insufficient_evidence` with no selected citations. The response text is Mock evidence-review placeholder
-  text, not an evaluation of real LLM answer quality. Swagger's OpenAPI page lists the `rag` group and
-  `POST /api/v1/ask` locally.
+- Earlier Phase 3A HTTP acceptance used the now-superseded Mock response shape. Phase 3A.1 uses
+  `evidence_retrieved` with `answer: null` instead; the new local API acceptance is recorded separately in
+  this session's Phase 3A.1 results.
 - Swagger/OpenAPI verification after the API-only rebuild: `GET /openapi.json` lists
   `/api/v1/papers/semantic-search`; an actual local request for `What is the E-CARGO model?` returned 200 and
   three provenance-bearing results. Swagger UI itself was used with `q=What is the E-CARGO model?` and
@@ -165,7 +368,10 @@ human reviewer must label relevant chunks before Recall@K, MRR, or a Keyword-vs-
 - No reviewer has supplied relevance or claim-support labels. No Recall@K, MRR, precision, groundedness, or
   answer-accuracy figure exists.
 - `POST /api/v1/ask` is structurally grounded only. It checks citation provenance, not semantic entailment.
-  The Mock provider's output is evidence-review placeholder text, not an academic answer.
+  The Mock provider returns selected evidence with no academic answer.
+- The Phase 3A.1 review in `evaluation/phase3a1_evidence_review.md` records actual Top-5 pgvector results for
+  eight E-CARGO/RBC questions, selected/unselected state, source pages, scores, exact stored-text excerpts,
+  and automatic preliminary observations. It is not human annotation and reports no retrieval or answer metric.
 
 ## Publication readiness
 
@@ -193,29 +399,24 @@ human reviewer must label relevant chunks before Recall@K, MRR, or a Keyword-vs-
    the fixture corpus) and decide a reliable section/printed-page-label extraction policy.
 2. Have a qualified reviewer label `evaluation/phase2a_retrieval_review.md`, including topical relevance,
    bibliography/table-of-contents noise, and claim-level support before publishing metrics.
-3. Choose a real LLM provider only with explicit cost/data approval; define its region, model ID, timeout,
-   provider logging policy, and evaluation gate before implementing Phase 3B.
+3. Before Phase 5 or any public/frontend exposure, obtain explicit approval for authentication, authorisation,
+   rights-aware text policy, reproducible evaluation, and deployment security. Do not treat citation provenance
+   as semantic entailment or expose the unauthenticated local APIs.
 
 ## Session handoff
 
-Phase 3A has local ingestion, inspection APIs, 178 pinned 384-dimensional embeddings, 178 preserved
-unknown-revision legacy embeddings, pgvector semantic retrieval, and Mock-backed structural grounding. It
-does not have a real LLM, Strands Agent, chat/session persistence, structured section extraction, verified
+Phase 4C has local ingestion/document management, 178 pinned 384-dimensional embeddings, 178 preserved
+unknown-revision legacy embeddings, pgvector semantic retrieval, structural citation validation, optional private
+Ollama generation, deterministic read-only `ResearchTools`, and bounded request-scoped research-agent
+orchestration. It does not have persisted sessions/audit events, structured section extraction, verified
 bibliographic metadata, semantic citation-support evaluation, human relevance labels, Titan vectors, Bedrock
-verification, or academic answer quality/citation readiness. Do not claim these unimplemented capabilities.
+verification, or academic answer-quality/citation readiness. Do not claim these unimplemented capabilities.
 
 ## Current blockers
 
-- Git commands now fail before execution with `xcrun: error: invalid active developer path
-  (/Library/Developer/CommandLineTools), missing xcrun at
-  /Library/Developer/CommandLineTools/usr/bin/xcrun`. Therefore Phase 2A could not re-check `git status`,
-  branch, or remote state after the earlier verified `origin/main` sync at `27b9f41`. No Git action was taken.
-- Task 1 diagnostics on 2026-11-02 confirm `/Library/Developer/CommandLineTools` exists but its required
-  `usr/bin/xcrun` does not; `/Applications/Xcode.app` is absent. `softwareupdate --list` offers Safari and
-  macOS updates only, not a standalone Command Line Tools repair. The minimum safe repair now requires a
-  user-driven Apple Command Line Tools/Xcode installation or repair; do not delete the existing CLT directory,
-  run a system upgrade, or use sudo without explicit user action. Phase 2A commit/push is paused until Git
-  works again.
 - Docker Compose does not yet mount a persistent local Hugging Face model cache. Recreating the API container
   may therefore require another model-artifact download and adds startup/query latency; this is a local
   developer-experience limitation, not a corpus-data upload path.
+- The document-management and page-context endpoints remain unauthenticated local/private interfaces. A future
+  frontend or network deployment needs authentication, authorisation, rights-aware content exposure, and a
+  separate security review.
